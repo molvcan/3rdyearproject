@@ -18,7 +18,7 @@ import cv2
 from PIL import Image, ImageTk
 import os
 import capture
-#import inference
+import inference
 import IR
 import tensorflow as tf
 import numpy as np
@@ -28,17 +28,19 @@ from tensorflow.python.framework import convert_to_constants
 #Functions
 
 # Read from IR sensor untill there is people detected
-def continueDetecting(): 
+def continueDetecting(display): 
     isDetected =False
     while isDetected ==False:
         time.sleep(0.5)
-        isDetected ==IR.isPeoplePresent()
+        isDetected =IR.isPeoplePresent()
+    classfication(display)
 
 # Call camera to take photos, it would return an image
 def camera(): 
     # Use the function in capture.py to initialize camera and take photos
-    img = capture.capture_input()
-    return img
+    img0 = capture.capture_input0()
+    img1 = capture.capture_input1()
+    return [img0,img1]
 
 # Convert the img from np.array format to the format used by tkinter
 def convertImage(img):
@@ -48,12 +50,13 @@ def convertImage(img):
     return img
 
 # Display the photos taken on the canvas
-def displayImageOnCanvas(display, app,img):
-    img = convertImage(img)
+def displayImageOnCanvas(display, app,img0,img1):
+    img0 = convertImage(img0)
+    img1 = convertImage(img1)
     # Display the top view
-    display.create_image(0, 0, anchor=tkinter.NW, image=img)
+    display.create_image(0, 0, anchor=tkinter.NW, image=img0)
     # Display the side view
-    display.create_image(512, 0, anchor=tkinter.NW, image=img)
+    display.create_image(512, 0, anchor=tkinter.NW, image=img1)
     # Update the canvas to display the photos
     app.update_idletasks()
     app.update()
@@ -61,24 +64,29 @@ def displayImageOnCanvas(display, app,img):
 # Start the inference and call the model to classify the photos
 # The photos will be classified into 7 groups
 def classfication(display):
-    #prediction =inference()
+
     count=0
-    testpara1=['empyty','empty','empyty','empty','hand','hand','hand','hand','hand','empty','empyty','empty','hand','cardboard']
-    prediction=testpara1[count]
+    testpara1=['empty','empty','empty','empty','hand','hand','hand','hand','hand','empty','empty','empty','hand','cardboard']
+    #prediction=testpara1[count]
+    img=camera()
+    #prediction="empty"
+    prediction =inference.prediction(img)
     # wait until the camera detected object
-    while True():
+    while True:
         # if there is no object in the box
         if prediction == "empty":
             emptyAttentionLabel = tkinter.Label(app,
-                                       text = "Hand present\nPlease put the rubbish there and remove your hand",
+                                       text = "empty",
                                        fg="black",bg="white",justify="left",anchor="e",pady=50,font=("Arial",25))
             emptyAttentionLabel.pack()
             while prediction == 'empty':
                 count+=1
-                img = camera() #take new photo
-                displayImageOnCanvas(display,app,img)
-                prediction =testpara1[count]
-                time.sleep(1)
+                [img0,img1] = camera() #take new photo
+                
+                displayImageOnCanvas(display,app,img0,img1)
+                #prediction="empty"
+                prediction =inference.prediction(img0)
+                time.sleep(0.1)
             emptyAttentionLabel.destroy()
         # if the user is holding the object
         elif prediction =="hand":
@@ -88,18 +96,20 @@ def classfication(display):
             handAttentionLabel.pack()
             while prediction == 'hand':
                 count+=1
-                img = camera(count) #take new photo
-                displayImageOnCanvas(display,app,img)
-                prediction =testpara1[count]
-                time.sleep(1)
+                [img0,img1] = camera() #take new photo
+                
+                displayImageOnCanvas(display,app,img0,img1)
+                prediction =inference.prediction(img0)
+                time.sleep(0.1)
             handAttentionLabel.destroy()
         else:
             # once the detection is not hand or empty, get out of the loop
             break
-        return [prediction,img]
+    askIfCorrect(display,prediction,img0,img1)
+
 
 # Ask the user if the prediction is correct or not
-def askIfCorrect(display,prediction,img):
+def askIfCorrect(display,prediction,img0,img1):
     # destory the canvas of previous stage
     display.destroy()
     displayText = "I detected "+prediction+"\nIs this correct?"
@@ -121,7 +131,7 @@ def askIfCorrect(display,prediction,img):
     # if the user says the result is wrong
     def wrong():
         cleanFrame()
-        askForCorrection(img)
+        askForCorrection(img0,img1)
     # create the two buttons and put them onto the window
     correctButton=tkinter.Button(app,text="correct",command =correct,font=("Arial",25))
     correctButton.pack()
@@ -162,7 +172,7 @@ def saveImage(path,img):
 
 # If the user saysthe classification is wrong, 
 # this function will ask the correct group
-def askForCorrection(img):
+def askForCorrection(img0,img1):
     Foldername = "EdgeDataset"
     # Clean the frame
     def destroyAll():
@@ -176,23 +186,28 @@ def askForCorrection(img):
     # Save the image into the folder of the group corrected by the user
     def paper():
         path=Foldername +"/paper/"
-        saveImage(path,img)
+        saveImage(path+"top/",img0)
+        saveImage(path+"side/",img1)
         destroyAll()
     def cardboard():
         path=Foldername +"/cardboard/"
-        saveImage(path,img)
+        saveImage(path+"top/",img0)
+        saveImage(path+"side/",img1)
         destroyAll()
     def metal():
         path=Foldername +"/metal/"
-        saveImage(path,img)
+        saveImage(path+"top/",img0)
+        saveImage(path+"side/",img1)
         destroyAll()
     def plastic():
         path=Foldername +"/plastic/"
-        saveImage(path,img)
+        saveImage(path+"top/",img0)
+        saveImage(path+"side/",img1)
         destroyAll()
     def glass():
         path=Foldername +"/glass/"
-        saveImage(path,img)
+        saveImage(path+"top/",img0)
+        saveImage(path+"side/",img1)
         destroyAll()
     # display the question and the buttons
     askLabel = tkinter.Label(app, 
@@ -214,9 +229,11 @@ def askForCorrection(img):
 def loopEvent():
     display = tkinter.Canvas(app,bg='black',width=1024,height=384)
     display.pack(side="top")
-    continueDetecting()
-    [prediction,img]= classfication(display)
-    askIfCorrect(display,prediction,img)
+    def continueD():
+        continueDetecting(display)
+    app.after(10000,continueD)
+
+    
 
 #################################################################################
 
@@ -226,6 +243,7 @@ try:
     app.geometry("1024x600")
     app.configure(bg='white')
     app.title('Waste Classification Programme') # set the name of the window
+
     loopEvent()
     app.mainloop()
 finally:
